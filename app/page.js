@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const Page = () => {
   const [isListening, setIsListening] = useState(false);
@@ -12,6 +12,8 @@ const Page = () => {
   const [summary, setSummary] = useState('');
 
   const initializeWebSocket = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
     wsRef.current = new WebSocket('ws://localhost:8080');
     
     wsRef.current.onmessage = (event) => {
@@ -26,14 +28,30 @@ const Page = () => {
         console.error('Server error:', response.message);
       }
     };
+
+    wsRef.current.onclose = () => {
+      // Attempt to reconnect after a delay
+      setTimeout(() => {
+        initializeWebSocket();
+      }, 3000);
+    };
   };
+
+  // Initialize WebSocket when component mounts
+  useEffect(() => {
+    initializeWebSocket();
+
+    // Cleanup on unmount
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
 
   const toggleListening = () => {
     if ('webkitSpeechRecognition' in window) {
       if (!isListening) {
-        // Initialize WebSocket when starting to listen
-        initializeWebSocket();
-        
         recognitionRef.current = new window.webkitSpeechRecognition();
         const recognition = recognitionRef.current;
         recognition.continuous = true;
@@ -67,10 +85,6 @@ const Page = () => {
         recognition.onend = () => {
           setIsListening(false);
           console.log('Stopped listening.');
-          // Close WebSocket connection when stopping
-          if (wsRef.current) {
-            wsRef.current.close();
-          }
         };
 
         recognition.start();

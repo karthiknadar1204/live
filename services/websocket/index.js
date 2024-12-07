@@ -20,8 +20,8 @@ function createWebSocketServer(port = 8080) {
           // Search for similar vectors
           const results = await querySimilarEmbeddings(embeddingVector);
           
-          // Prepare context from matched results
-          const context = results.map(match => match.transcript).join('\n');
+          // Prepare context from the single best match
+          const context = results[0]?.transcript || '';
           
           // Generate summary using GPT-4
           const summary = await generateSummary(text, context);

@@ -26,7 +26,7 @@ async function storeEmbedding(text, embeddingVector) {
   return noteId;
 }
 
-async function querySimilarEmbeddings(embeddingVector, limit = 10000) {
+async function querySimilarEmbeddings(embeddingVector, limit = 1) {
   const queryResponse = await notesIndex.query({
     vector: embeddingVector,
     topK: limit,
