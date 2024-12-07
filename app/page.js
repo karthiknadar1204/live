@@ -4,12 +4,21 @@ import React, { useState, useRef, useEffect } from 'react';
 const Page = () => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [embeddings, setEmbeddings] = useState(null);
   const [inputText, setInputText] = useState('');
   const recognitionRef = useRef(null);
   const wsRef = useRef(null);
   const [queryResults, setQueryResults] = useState([]);
   const [summary, setSummary] = useState('');
+  const [transcriptHistory, setTranscriptHistory] = useState([]);
+  const lastSpeechRef = useRef(Date.now());
+  const currentTranscriptRef = useRef('');
+
+  useEffect(() => {
+    const savedTranscripts = localStorage.getItem('transcriptHistory');
+    if (savedTranscripts) {
+      setTranscriptHistory(JSON.parse(savedTranscripts));
+    }
+  }, []);
 
   const initializeWebSocket = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -18,36 +27,40 @@ const Page = () => {
     
     wsRef.current.onmessage = (event) => {
       const response = JSON.parse(event.data);
-      if (response.type === 'embedding') {
-        console.log('Speech Embeddings:', response.data);
-        setEmbeddings(response.data);
-      } else if (response.type === 'queryResult') {
+      if (response.type === 'queryResult') {
         setQueryResults(response.results);
         setSummary(response.summary);
-      } else if (response.type === 'error') {
-        console.error('Server error:', response.message);
       }
     };
 
     wsRef.current.onclose = () => {
-      // Attempt to reconnect after a delay
       setTimeout(() => {
         initializeWebSocket();
       }, 3000);
     };
   };
 
-  // Initialize WebSocket when component mounts
   useEffect(() => {
     initializeWebSocket();
-
-    // Cleanup on unmount
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
     };
   }, []);
+
+  const saveTranscript = (text, isNewLine = false) => {
+    const now = new Date();
+    const newTranscript = {
+      text,
+      timestamp: now.toISOString(),
+      isNewLine
+    };
+    
+    const updatedHistory = [...transcriptHistory, newTranscript];
+    setTranscriptHistory(updatedHistory);
+    localStorage.setItem('transcriptHistory', JSON.stringify(updatedHistory));
+  };
 
   const toggleListening = () => {
     if ('webkitSpeechRecognition' in window) {
@@ -59,19 +72,34 @@ const Page = () => {
 
         recognition.onstart = () => {
           setIsListening(true);
-          console.log('Started listening...');
+          lastSpeechRef.current = Date.now();
+          currentTranscriptRef.current = '';
         };
 
         recognition.onresult = (event) => {
           const current = event.resultIndex;
-          const transcript = event.results[current][0].transcript;
-          console.log('Speech transcript:', transcript);
-          setTranscript(transcript);
+          const transcriptText = event.results[current][0].transcript;
+          const now = Date.now();
+          const timeSinceLastSpeech = now - lastSpeechRef.current;
           
+          // Check if this is a new line of speech (pause > 3 seconds)
+          const isNewLine = timeSinceLastSpeech > 3000;
+          
+          if (isNewLine && currentTranscriptRef.current) {
+            // Save the previous transcript before starting new line
+            saveTranscript(currentTranscriptRef.current, false);
+            currentTranscriptRef.current = transcriptText;
+          } else {
+            currentTranscriptRef.current = transcriptText;
+          }
+          
+          setTranscript(transcriptText);
+          lastSpeechRef.current = now;
+
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
               type: 'store',
-              text: transcript,
+              text: transcriptText,
               userId: 'default-user'
             }));
           }
@@ -83,8 +111,11 @@ const Page = () => {
         };
 
         recognition.onend = () => {
+          // Save the final transcript when recognition ends
+          if (currentTranscriptRef.current) {
+            saveTranscript(currentTranscriptRef.current, true);
+          }
           setIsListening(false);
-          console.log('Stopped listening.');
         };
 
         recognition.start();
@@ -95,6 +126,11 @@ const Page = () => {
     } else {
       alert('Speech recognition is not supported in your browser.');
     }
+  };
+
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString();
   };
 
   const handleSend = () => {
@@ -110,7 +146,7 @@ const Page = () => {
 
   return (
     <div className="min-h-screen p-8">
-      <h1 className="text-2xl font-bold mb-4">Speech to Embeddings</h1>
+      <h1 className="text-2xl font-bold mb-4">Speech to Text Assistant</h1>
       
       <button
         onClick={toggleListening}
@@ -126,6 +162,23 @@ const Page = () => {
           <h2 className="text-xl font-semibold">Live Speech:</h2>
           <div className="mt-2 p-4 bg-gray-100 dark:bg-gray-800 rounded min-h-[100px]">
             {transcript || 'Start speaking to see transcription...'}
+          </div>
+          
+          <h2 className="text-xl font-semibold mt-4">Transcript History:</h2>
+          <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+            {transcriptHistory.map((item, index) => (
+              <div 
+                key={index} 
+                className={`p-2 ${
+                  item.isNewLine ? 'mt-4 border-t border-gray-300' : ''
+                } bg-gray-100 dark:bg-gray-800 rounded`}
+              >
+                <div className="text-sm text-gray-500">
+                  {formatTimestamp(item.timestamp)}
+                </div>
+                <div>{item.text}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -151,7 +204,7 @@ const Page = () => {
               Send
             </button>
           </div>
-          
+
           <div className="mt-4">
             {summary && (
               <div className="mb-4">
@@ -179,17 +232,6 @@ const Page = () => {
           </div>
         </div>
       </div>
-
-      {embeddings && (
-        <div className="mt-4">
-          <h2 className="text-xl font-semibold">Embeddings:</h2>
-          <div className="mt-2 p-4 bg-gray-100 dark:bg-gray-800 rounded overflow-auto max-h-60">
-            <pre className="text-sm">
-              {JSON.stringify(embeddings.slice(0, 10), null, 2)} ...
-            </pre>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
