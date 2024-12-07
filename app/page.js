@@ -101,7 +101,8 @@ const Page = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN && inputText.trim()) {
       wsRef.current.send(JSON.stringify({
         type: 'query',
-        text: inputText.trim()
+        text: inputText.trim(),
+        userId: 'default-user'
       }));
       setInputText('');
     }
