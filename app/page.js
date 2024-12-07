@@ -68,11 +68,11 @@ const Page = () => {
           console.log('Speech transcript:', transcript);
           setTranscript(transcript);
           
-          // Send transcript to WebSocket server if connection is open
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
               type: 'store',
-              text: transcript
+              text: transcript,
+              userId: 'default-user'
             }));
           }
         };
