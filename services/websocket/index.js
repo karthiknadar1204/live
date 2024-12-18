@@ -1,9 +1,14 @@
 const WebSocket = require('ws');
 const { generateEmbedding, generateSummary } = require('../openai');
-const { storeEmbedding, querySimilarEmbeddings } = require('../pinecone');
+const { storeEmbedding, querySimilarEmbeddings, deleteAllVectors } = require('../pinecone');
+const { chunkText } = require('../utils/textChunker');
 
 function createWebSocketServer(port = 8080) {
   const wss = new WebSocket.Server({ port });
+  
+  let transcriptBuffer = '';
+  const SPEECH_BUFFER_TIME = 5000; // 5 seconds
+  let bufferTimeout;
 
   wss.on('connection', (ws) => {
     console.log('WebSocket connected');
@@ -11,36 +16,72 @@ function createWebSocketServer(port = 8080) {
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message);
-        const { text, type } = data;
+        const { text, type, userId } = data;
 
-        // Generate embedding for the input text
-        const embeddingVector = await generateEmbedding(text);
+        if (type === 'store') {
+          transcriptBuffer += text + ' ';
 
-        if (type === 'query') {
-          // Search for similar vectors
+          // Clear existing timeout if any
+          if (bufferTimeout) {
+            clearTimeout(bufferTimeout);
+          }
+
+          // Set new timeout
+          bufferTimeout = setTimeout(async () => {
+            if (transcriptBuffer.trim().length > 0) {
+              // Generate chunks with overlap
+              const chunks = chunkText(transcriptBuffer);
+              
+              // Process each chunk
+              for (const chunk of chunks) {
+                const embeddingVector = await generateEmbedding(chunk);
+                const noteId = await storeEmbedding(chunk, embeddingVector, userId);
+                
+                ws.send(JSON.stringify({
+                  type: 'embedding',
+                  data: embeddingVector,
+                  noteId,
+                  text: chunk,
+                  isChunk: true,
+                  totalChunks: chunks.length
+                }));
+              }
+
+              // Reset buffer
+              transcriptBuffer = '';
+            }
+          }, SPEECH_BUFFER_TIME);
+        } else if (type === 'query') {
+          if (!text || text.trim().length === 0) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: 'Query text cannot be empty'
+            }));
+            return;
+          }
+          
+          const embeddingVector = await generateEmbedding(text);
           const results = await querySimilarEmbeddings(embeddingVector);
-          
-          // Prepare context from the single best match
-          const context = results[0]?.transcript || '';
-          
-          // Generate summary using GPT-4
-          const summary = await generateSummary(text, context);
+          const summary = await generateSummary(text, results);
 
-          // Send back the processed results
           ws.send(JSON.stringify({
             type: 'queryResult',
-            results,
+            results: results,
             summary
           }));
-        } else {
-          // Store new transcript
-          const noteId = await storeEmbedding(text, embeddingVector);
-
-          ws.send(JSON.stringify({
-            type: 'embedding',
-            data: embeddingVector,
-            noteId
-          }));
+        } else if (type === 'deleteAll') {
+          try {
+            const result = await deleteAllVectors();
+            ws.send(JSON.stringify({
+              type: 'deleteAllSuccess',
+              message: result.message
+            }));
+          } catch (error) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: error.message || 'Failed to delete vectors'
+            }));
+          }
         }
       } catch (error) {
         console.error('Error processing message:', error);
@@ -50,9 +91,14 @@ function createWebSocketServer(port = 8080) {
         }));
       }
     });
+
+    ws.on('close', () => {
+      if (bufferTimeout) {
+        clearTimeout(bufferTimeout);
+      }
+    });
   });
 
-  console.log(`Speech-to-Embeddings server running on port ${port}`);
   return wss;
 }
 

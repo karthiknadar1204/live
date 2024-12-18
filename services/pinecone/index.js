@@ -26,10 +26,10 @@ async function storeEmbedding(text, embeddingVector) {
   return noteId;
 }
 
-async function querySimilarEmbeddings(embeddingVector, limit = 1) {
+async function querySimilarEmbeddings(embeddingVector) {
   const queryResponse = await notesIndex.query({
     vector: embeddingVector,
-    topK: limit,
+    topK: 10000,
     includeMetadata: true
   });
   
@@ -39,7 +39,19 @@ async function querySimilarEmbeddings(embeddingVector, limit = 1) {
   }));
 }
 
+async function deleteAllVectors() {
+  try {
+    await notesIndex.deleteAll();
+    console.log("Successfully deleted all vectors from the index");
+    return { success: true, message: "All vectors deleted successfully" };
+  } catch (error) {
+    console.error("Error deleting vectors:", error);
+    throw error;
+  }
+}
+
 module.exports = {
   storeEmbedding,
-  querySimilarEmbeddings
+  querySimilarEmbeddings,
+  deleteAllVectors
 };
