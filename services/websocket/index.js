@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const { generateEmbedding, generateSummary } = require('../openai');
 const { storeEmbedding, querySimilarEmbeddings, deleteAllVectors } = require('../pinecone');
-const { chunkText } = require('../utils/textChunker');
+const { chunkText } = require('../../utils/textChunker');
 
 function createWebSocketServer(port = 8080) {
   const wss = new WebSocket.Server({ port });
@@ -61,8 +61,11 @@ function createWebSocketServer(port = 8080) {
           }
           
           const embeddingVector = await generateEmbedding(text);
+          console.log("vector for the question:",embeddingVector);
           const results = await querySimilarEmbeddings(embeddingVector);
+          console.log("results for the question:",results);
           const summary = await generateSummary(text, results);
+          console.log("summary for the question:",summary);
 
           ws.send(JSON.stringify({
             type: 'queryResult',

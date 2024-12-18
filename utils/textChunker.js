@@ -1,14 +1,21 @@
-function chunkText(text, chunkSize = 100, overlapSize = 20) {
-  const words = text.trim().split(/\s+/);
+function chunkText(text, maxChunkSize = 1000) {
+  const words = text.split(' ');
   const chunks = [];
-  
-  for (let i = 0; i < words.length; i += chunkSize - overlapSize) {
-    const chunk = words.slice(i, i + chunkSize).join(' ');
-    if (chunk.length >= 30) { // Minimum chunk size threshold
-      chunks.push(chunk);
+  let currentChunk = '';
+
+  for (const word of words) {
+    if ((currentChunk + ' ' + word).length <= maxChunkSize) {
+      currentChunk += (currentChunk ? ' ' : '') + word;
+    } else {
+      chunks.push(currentChunk);
+      currentChunk = word;
     }
   }
-  
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
   return chunks;
 }
 
