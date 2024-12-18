@@ -29,7 +29,7 @@ async function storeEmbedding(text, embeddingVector) {
 async function querySimilarEmbeddings(embeddingVector) {
   const queryResponse = await notesIndex.query({
     vector: embeddingVector,
-    topK: 10000,
+    topK: 10,
     includeMetadata: true
   });
   

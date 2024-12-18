@@ -12,6 +12,7 @@ const Page = () => {
   const [queryResults, setQueryResults] = useState(null);
   const [bufferTimer, setBufferTimer] = useState(5);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [bufferedTranscript, setBufferedTranscript] = useState("");
   
   const deepgramRef = useRef(null);
   const connectionRef = useRef(null);
@@ -130,13 +131,8 @@ const Page = () => {
         connectionRef.current.on(LiveTranscriptionEvents.Transcript, (data) => {
           const transcriptText = data.channel.alternatives[0].transcript;
           if (transcriptText.trim()) {
-            setTranscript((prev) => {
-              if (transcriptText !== prev) {
-                sendToWebSocket(transcriptText);
-                return transcriptText;
-              }
-              return prev;
-            });
+            setBufferedTranscript(prev => prev + " " + transcriptText);
+            setTranscript(prev => prev + " " + transcriptText);
           }
         });
 
@@ -221,6 +217,11 @@ const Page = () => {
       interval = setInterval(() => {
         setBufferTimer((prev) => {
           if (prev <= 1) {
+            if (bufferedTranscript.trim()) {
+              sendToWebSocket(bufferedTranscript);
+              setBufferedTranscript("");
+              setTranscript("");
+            }
             setIsBuffering(false);
             return 5;
           }
@@ -234,7 +235,7 @@ const Page = () => {
         clearInterval(interval);
       }
     };
-  }, [isListening, bufferTimer]);
+  }, [isListening, bufferTimer, bufferedTranscript]);
 
   const handleDeleteAll = async () => {
     if (window.confirm('Are you sure you want to delete all vectors? This action cannot be undone.')) {

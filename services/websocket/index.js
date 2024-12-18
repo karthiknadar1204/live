@@ -19,38 +19,23 @@ function createWebSocketServer(port = 8080) {
         const { text, type, userId } = data;
 
         if (type === 'store') {
-          transcriptBuffer += text + ' ';
-
-          // Clear existing timeout if any
-          if (bufferTimeout) {
-            clearTimeout(bufferTimeout);
+          const chunks = chunkText(text);
+          
+          // Process each chunk
+          for (const chunk of chunks) {
+            const embeddingVector = await generateEmbedding(chunk);
+            // Only store in Pinecone
+            const noteId = await storeEmbedding(chunk, embeddingVector, userId);
+            
+            ws.send(JSON.stringify({
+              type: 'embedding',
+              data: embeddingVector,
+              noteId,
+              text: chunk,
+              isChunk: true,
+              totalChunks: chunks.length
+            }));
           }
-
-          // Set new timeout
-          bufferTimeout = setTimeout(async () => {
-            if (transcriptBuffer.trim().length > 0) {
-              // Generate chunks with overlap
-              const chunks = chunkText(transcriptBuffer);
-              
-              // Process each chunk
-              for (const chunk of chunks) {
-                const embeddingVector = await generateEmbedding(chunk);
-                const noteId = await storeEmbedding(chunk, embeddingVector, userId);
-                
-                ws.send(JSON.stringify({
-                  type: 'embedding',
-                  data: embeddingVector,
-                  noteId,
-                  text: chunk,
-                  isChunk: true,
-                  totalChunks: chunks.length
-                }));
-              }
-
-              // Reset buffer
-              transcriptBuffer = '';
-            }
-          }, SPEECH_BUFFER_TIME);
         } else if (type === 'query') {
           if (!text || text.trim().length === 0) {
             ws.send(JSON.stringify({
